@@ -25,6 +25,18 @@ fn feq(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-6
 }
 
+/// Compares two angles in radians, allowing for a small margin of error.
+/// The angles are assessed modulo 2π.
+fn feq_rad(a_rad: f64, b_rad: f64) -> bool {
+    for i in -4..4 {
+        let a_rad_mod = a_rad + (i as f64) * 2.0 * PI;
+        if feq(a_rad_mod, b_rad) {
+            return true;
+        }
+    }
+    false
+}
+
 fn is_point_on_ellipse(p: &Point) -> bool {
     feq(
         (4.0 * p.x.powi(2)) + p.y.powi(2),
@@ -32,7 +44,7 @@ fn is_point_on_ellipse(p: &Point) -> bool {
     )
 }
 
-fn angle_from_one_point_to_another(p1: &Point, p2: &Point) -> f64 {
+fn angle_from_one_point_to_another_rad(p1: &Point, p2: &Point) -> f64 {
     (p2.y - p1.y).atan2(p2.x - p1.x)
 }
 
@@ -57,29 +69,33 @@ fn get_next_point_after_reflection(prev_point: &Point, reflec_point: &Point) -> 
     println!("outgoing_slope: {}", outgoing_slope);
 
     // try both angles
-    let outgoing_angle_radians_opt1 = (outgoing_slope).atan();
-    let outgoing_angle_radians_opt2 = (outgoing_slope).atan() + PI;
+    let outgoing_angle_rad_opt1 = (outgoing_slope).atan();
+    let outgoing_angle_rad_opt2 = (outgoing_slope).atan() + PI;
 
-    let next_point_opt1 = get_next_point_after_reflection_intermediate(reflec_point, outgoing_angle_radians_opt1);
-    let next_point_opt2 = get_next_point_after_reflection_intermediate(reflec_point, outgoing_angle_radians_opt2);
+    let next_point_opt1 = get_next_point_after_reflection_intermediate(reflec_point, outgoing_angle_rad_opt1);
+    let next_point_opt2 = get_next_point_after_reflection_intermediate(reflec_point, outgoing_angle_rad_opt2);
     
     let next_point = match (next_point_opt1, next_point_opt2) {
         (Some(_next_point_opt1), Some(_next_point_opt2)) => panic!("Both next points (opt1 and opt2) seem valid."),
         (Some(next_point_opt1), None) => {
-            debug_print_angle_rad_in_deg(outgoing_angle_radians_opt1, "outgoing_angle_radians_opt1");
+            debug_print_angle_rad_in_deg(outgoing_angle_rad_opt1, "outgoing_angle_rad_opt1");
             next_point_opt1
         },
         (None, Some(next_point_opt2)) => {
-            debug_print_angle_rad_in_deg(outgoing_angle_radians_opt2, "outgoing_angle_radians_opt2");
+            debug_print_angle_rad_in_deg(outgoing_angle_rad_opt2, "outgoing_angle_rad_opt2");
             next_point_opt2
         },
-        (None, None) => panic!("No next point found."),
+        (None, None) => {
+            debug_print_angle_rad_in_deg(outgoing_angle_rad_opt1, "outgoing_angle_rad_opt1");
+            debug_print_angle_rad_in_deg(outgoing_angle_rad_opt2, "outgoing_angle_rad_opt2");
+            panic!("No next point found.")
+        }
     };
     next_point
 }
 
-fn get_next_point_after_reflection_intermediate(reflec_point: &Point, outgoing_angle_radians: f64) -> Option<Point> {
-    let outgoing_slope = outgoing_angle_radians.tan();
+fn get_next_point_after_reflection_intermediate(reflec_point: &Point, outgoing_angle_rad: f64) -> Option<Point> {
+    let outgoing_slope = outgoing_angle_rad.tan();
     
     let const_a = (-outgoing_slope * reflec_point.x) + reflec_point.y; // some const that made sense to factor out
     println!("const_a: {}", const_a);
@@ -102,8 +118,8 @@ fn get_next_point_after_reflection_intermediate(reflec_point: &Point, outgoing_a
             let next_point_try1 = Point { x: next_point_x_try1, y: (outgoing_slope * next_point_x_try1) + const_a };
             let next_point_try2 = Point { x: next_point_x_try2, y: (outgoing_slope * next_point_x_try2) + const_a };
 
-            let is_try1_good = feq(angle_from_one_point_to_another(&reflec_point, &next_point_try1), outgoing_angle_radians);
-            let is_try2_good = feq(angle_from_one_point_to_another(&reflec_point, &next_point_try2), outgoing_angle_radians);
+            let is_try1_good = feq_rad(angle_from_one_point_to_another_rad(&reflec_point, &next_point_try1), outgoing_angle_rad);
+            let is_try2_good = feq_rad(angle_from_one_point_to_another_rad(&reflec_point, &next_point_try2), outgoing_angle_rad);
 
             println!("Point, is_good - try1: {} ({}), try2: {} ({})",
                 next_point_try1.to_string(), is_try1_good, next_point_try2.to_string(), is_try2_good);
