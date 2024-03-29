@@ -202,7 +202,7 @@ fn main() {
         }
 
         if bounce_num > 3000 {
-            // panic!("Too many bounces");
+            panic!("Too many bounces");
         }
 
         point_last = point_now;
