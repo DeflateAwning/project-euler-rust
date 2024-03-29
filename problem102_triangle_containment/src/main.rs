@@ -17,20 +17,20 @@ fn download_target_file() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[derive(Clone)]
+// #[derive(Clone)]
 struct Point {
     x: i32,
     y: i32,
 }
 
-#[derive(Clone)]
+// #[derive(Clone)]
 struct Triangle {
     a: Point,
     b: Point,
     c: Point,
 }
 
-fn is_point_within_triangle(p: Point, t: Triangle) -> bool {
+fn is_point_within_triangle(p: &Point, t: Triangle) -> bool {
     let area = 0.5 * ((-t.b.y * t.c.x + t.a.y * (-t.b.x + t.c.x) + t.a.x * (t.b.y - t.c.y) + t.b.x * t.c.y) as f64);
     let s = 1.0 / (2.0 * area) * ((t.a.y * t.c.x - t.a.x * t.c.y + (t.c.y - t.a.y) * p.x + (t.a.x - t.c.x) * p.y) as f64);
     let t = 1.0 / (2.0 * area) * ((t.a.x * t.b.y - t.a.y * t.b.x + (t.a.y - t.b.y) * p.x + (t.b.x - t.a.x) * p.y) as f64);
@@ -47,6 +47,7 @@ fn main() {
     if !Path::new(&file_path).exists() {
         download_target_file().unwrap();
     }
+    println!("File downloaded to: {}", Path::new(&file_path).canonicalize().unwrap().to_string_lossy());
 
     let origin_point = Point { x: 0, y: 0 };
 
@@ -61,11 +62,10 @@ fn main() {
             c: Point { x: points[4], y: points[5] },
         };
 
-        if is_point_within_triangle(origin_point.clone(), triangle.clone()) {
+        if is_point_within_triangle(&origin_point, triangle) {
             count += 1;
         }
     }
 
     println!("Number of triangles containing the origin: {}", count);
-
 }
