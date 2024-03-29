@@ -1,5 +1,6 @@
 use roots::{self, Roots};
 use core::f64::consts::PI;
+use vecmath::{Vector2};
 
 #[derive(Clone, Copy, Debug)]
 struct Point {
@@ -16,7 +17,7 @@ impl Point {
     }
 }
 
-fn get_slope_at_point(p: &Point) -> f64 {
+fn get_ellipse_slope_at_point(p: &Point) -> f64 {
     -4.0 * p.x / p.y
 }
 
@@ -35,71 +36,72 @@ fn angle_from_one_point_to_another(p1: &Point, p2: &Point) -> f64 {
     (p2.y - p1.y).atan2(p2.x - p1.x)
 }
 
-fn get_next_point_after_reflection(p1: &Point, p2: &Point) -> Point {
-    // reflection occurs at p2
+fn get_next_point_after_reflection(prev_point: &Point, reflec_point: &Point) -> Point {
+    // reflection occurs at "reflec_point"
 
-    let tangent_slope_at_p2 = get_slope_at_point(p2);
-    let tangent_angle_at_p2_radians = tangent_slope_at_p2.atan();
+    let incoming_vector = points_to_vector(*prev_point, *reflec_point);
 
-    let prev_laser_angle_radians = angle_from_one_point_to_another(p1, p2);
-    println!("prev_laser_angle_degrees: {}", prev_laser_angle_radians.to_degrees());
-    println!("tangent_angle_at_p2_degrees: {}", tangent_angle_at_p2_radians.to_degrees());
+    let tan_slope_at_reflec_point = get_ellipse_slope_at_point(reflec_point);
+    let norm_slope_at_reflec_point = -1.0 / tan_slope_at_reflec_point;
 
-    // now, never use p1 again; p2 is the source, and we're trying to find the next one after
+    let outgoing_slope = get_slope_of_outgoing_bounce(
+        vector_to_slope(incoming_vector),
+        norm_slope_at_reflec_point,
+    );
 
-    let prev_laser_angle_other_direction_radians = prev_laser_angle_radians + PI;
-    println!("prev_laser_angle_other_direction_degrees: {}", prev_laser_angle_other_direction_radians.to_degrees());
+    // Recall, atan always returns an angle in Q1 or Q4.
+    // If the reflection point is in Q2 or Q3 (i.e., neg Y point), that's good! The angle will be going up.
+    // If the reflection point is in Q1 or Q4 (i.e., pos Y point), we need to ensure the angle is pointed downwards by adding PI.
+    let outgoing_angle_radians =
+        if reflec_point.y <= 0.0 {
+            outgoing_slope.atan()
+        } else {
+            outgoing_slope.atan() + PI
+    };
 
-    let angle_from_tangent_radians = prev_laser_angle_other_direction_radians - tangent_angle_at_p2_radians; // e.g., 65 degrees
-    println!("angle_from_tangent_degrees: {}", angle_from_tangent_radians.to_degrees());
-
-    let angle_from_normal_radians = (PI - 2.0 * (angle_from_tangent_radians)) / 2.0;
-    println!("angle_from_normal_degrees: {}", angle_from_normal_radians.to_degrees());
-
-    // TODO: in two quadrants, I think the next line needs to have the opposite sign
-
-    let new_laser_angle_radians = prev_laser_angle_other_direction_radians + (2.0 * angle_from_normal_radians);
-    println!("new_laser_angle_degrees: {}", new_laser_angle_radians.to_degrees());
-
-    let new_laser_slope = new_laser_angle_radians.tan(); // TODO: check if this is correct
-    println!("new_laser_slope: {}", new_laser_slope);
-
-    // using the new slope (assuming it's right), find the new point
-    let const_a = (-new_laser_slope * p2.x) + p2.y; // some const that made sense to factor out
+    let const_a = (-outgoing_slope * reflec_point.x) + reflec_point.y; // some const that made sense to factor out
     println!("const_a: {}", const_a);
 
-    let new_x_roots = roots::find_roots_quadratic(
-        4.0 + new_laser_slope.powi(2),
-        2.0 * new_laser_slope * const_a,
+    let next_point_x_roots = roots::find_roots_quadratic(
+        4.0 + outgoing_slope.powi(2),
+        2.0 * outgoing_slope * const_a,
         const_a.powi(2) - 100.0,
     );
 
     // TODO: figure out how to unpack the roots tuple directly
-    let new_point: Point = match new_x_roots {
+    let next_point: Point = match next_point_x_roots {
         Roots::No(_) => panic!("No roots found"),
-        Roots::One(_new_x) => Point { x: _new_x[0], y: (new_laser_slope * _new_x[0]) + const_a },
-        Roots::Two(new_x_roots) => {
-            let new_x_try1 = new_x_roots[0];
-            let new_x_try2 = new_x_roots[1];
+        Roots::One(next_x) => Point { x: next_x[0], y: (outgoing_slope * next_x[0]) + const_a },
+        Roots::Two(next_point_x_roots) => {
+            let next_point_x_try1 = next_point_x_roots[0];
+            let next_point_x_try2 = next_point_x_roots[1];
 
             // figure out which root is the correct one
-            let new_point_try1 = Point { x: new_x_try1, y: (new_laser_slope * new_x_try1) + const_a };
-            let new_point_try2 = Point { x: new_x_try2, y: (new_laser_slope * new_x_try2) + const_a };
+            let next_point_try1 = Point { x: next_point_x_try1, y: (outgoing_slope * next_point_x_try1) + const_a };
+            let next_point_try2 = Point { x: next_point_x_try2, y: (outgoing_slope * next_point_x_try2) + const_a };
 
-            let is_try1_good = feq(angle_from_one_point_to_another(&p2, &new_point_try1), new_laser_angle_radians);
-            let is_try2_good = feq(angle_from_one_point_to_another(&p2, &new_point_try2), new_laser_angle_radians);
+            let is_try1_good = feq(angle_from_one_point_to_another(&reflec_point, &next_point_try1), outgoing_angle_radians);
+            let is_try2_good = feq(angle_from_one_point_to_another(&reflec_point, &next_point_try2), outgoing_angle_radians);
 
             println!("Point, is_good - try1: {} ({}), try2: {} ({})",
-                new_point_try1.to_string(), is_try1_good, new_point_try2.to_string(), is_try2_good);
+                next_point_try1.to_string(), is_try1_good, next_point_try2.to_string(), is_try2_good);
 
-            if !(is_point_on_ellipse(&new_point_try1) && is_point_on_ellipse(&new_point_try2)) {
-                panic!("A new_point try is not on the ellipse.");
+            // valid points should be on the ellipse
+            if !is_point_on_ellipse(&next_point_try1) && !is_point_on_ellipse(&next_point_try2) {
+                panic!("Neither next_point try is on the ellipse.");
+            }
+            else if !is_point_on_ellipse(&next_point_try1) {
+                panic!("next_point_try1 is not on the ellipse.");
+            }
+            else if !is_point_on_ellipse(&next_point_try2) {
+                panic!("next_point_try2 is not on the ellipse.");
             }
 
+            // decide on a final point
             if is_try1_good {
-                new_point_try1
+                next_point_try1
             } else if is_try2_good {
-                new_point_try2
+                next_point_try2
             }
             else {
                 panic!("Neither point matches the angle.");
@@ -108,9 +110,29 @@ fn get_next_point_after_reflection(p1: &Point, p2: &Point) -> Point {
         _ => panic!("Unexpected number of roots found."),
     };
 
-    new_point
+    next_point
 }
 
+fn points_to_vector(p1: Point, p2: Point) -> Vector2<f64> {
+    Vector2::from([p2.x - p1.x, p2.y - p1.y])
+}
+
+fn vector_to_slope(vector2: Vector2<f64>) -> f64 {
+    vector2[1] / vector2[0]
+}
+
+fn get_slope_of_outgoing_bounce(incoming_slope: f64, normal_slope: f64) -> f64 {
+    // Source: https://math.stackexchange.com/a/2239245
+    // Solution (uses sympy in Python):
+        // from sympy import symbols, Eq, solve
+        // k1, k2, k3 = symbols('incoming_slope normal_slope outgoing_slope')
+        // equation = Eq((k1 - k2) / (1 + (k1*k2)), (k2 - k3) / (1 + (k2*k3)))
+        // solution = solve(equation, k3)
+        // print(solution)    
+
+    (incoming_slope*normal_slope*normal_slope - incoming_slope + 2.0*normal_slope) / 
+        (2.0*incoming_slope*normal_slope - normal_slope*normal_slope + 1.0)
+}
 
 fn main() {
     println!("Starting...");
