@@ -1,6 +1,6 @@
 use roots::{self, Roots};
 use core::f64::consts::PI;
-use vecmath::{Vector2};
+use vecmath::{traits::Radians, Vector2};
 
 #[derive(Clone, Copy, Debug)]
 struct Point {
@@ -38,27 +38,49 @@ fn angle_from_one_point_to_another(p1: &Point, p2: &Point) -> f64 {
 
 fn get_next_point_after_reflection(prev_point: &Point, reflec_point: &Point) -> Point {
     // reflection occurs at "reflec_point"
+    println!("reflect_point signs: ({}, {})", reflec_point.x.signum(), reflec_point.y.signum());
 
     let incoming_vector = points_to_vector(*prev_point, *reflec_point);
+    println!("incoming_vector: {:?}", incoming_vector);
+
+    let incoming_slope = vector_to_slope(incoming_vector);
+    println!("incoming_slope: {}", incoming_slope);
 
     let tan_slope_at_reflec_point = get_ellipse_slope_at_point(reflec_point);
     let norm_slope_at_reflec_point = -1.0 / tan_slope_at_reflec_point;
+    println!("norm_slope_at_reflec_point: {}, tan_slope_at_reflec_point: {}", norm_slope_at_reflec_point, tan_slope_at_reflec_point);
 
     let outgoing_slope = get_slope_of_outgoing_bounce(
-        vector_to_slope(incoming_vector),
+        incoming_slope,
         norm_slope_at_reflec_point,
     );
+    println!("outgoing_slope: {}", outgoing_slope);
 
-    // Recall, atan always returns an angle in Q1 or Q4.
-    // If the reflection point is in Q2 or Q3 (i.e., neg Y point), that's good! The angle will be going up.
-    // If the reflection point is in Q1 or Q4 (i.e., pos Y point), we need to ensure the angle is pointed downwards by adding PI.
-    let outgoing_angle_radians =
-        if reflec_point.y <= 0.0 {
-            outgoing_slope.atan()
-        } else {
-            outgoing_slope.atan() + PI
+    // try both angles
+    let outgoing_angle_radians_opt1 = (outgoing_slope).atan();
+    let outgoing_angle_radians_opt2 = (outgoing_slope).atan() + PI;
+
+    let next_point_opt1 = get_next_point_after_reflection_intermediate(reflec_point, outgoing_angle_radians_opt1);
+    let next_point_opt2 = get_next_point_after_reflection_intermediate(reflec_point, outgoing_angle_radians_opt2);
+    
+    let next_point = match (next_point_opt1, next_point_opt2) {
+        (Some(_next_point_opt1), Some(_next_point_opt2)) => panic!("Both next points (opt1 and opt2) seem valid."),
+        (Some(next_point_opt1), None) => {
+            debug_print_angle_rad_in_deg(outgoing_angle_radians_opt1, "outgoing_angle_radians_opt1");
+            next_point_opt1
+        },
+        (None, Some(next_point_opt2)) => {
+            debug_print_angle_rad_in_deg(outgoing_angle_radians_opt2, "outgoing_angle_radians_opt2");
+            next_point_opt2
+        },
+        (None, None) => panic!("No next point found."),
     };
+    next_point
+}
 
+fn get_next_point_after_reflection_intermediate(reflec_point: &Point, outgoing_angle_radians: f64) -> Option<Point> {
+    let outgoing_slope = outgoing_angle_radians.tan();
+    
     let const_a = (-outgoing_slope * reflec_point.x) + reflec_point.y; // some const that made sense to factor out
     println!("const_a: {}", const_a);
 
@@ -69,9 +91,9 @@ fn get_next_point_after_reflection(prev_point: &Point, reflec_point: &Point) -> 
     );
 
     // TODO: figure out how to unpack the roots tuple directly
-    let next_point: Point = match next_point_x_roots {
+    let next_point: Option<Point> = match next_point_x_roots {
         Roots::No(_) => panic!("No roots found"),
-        Roots::One(next_x) => Point { x: next_x[0], y: (outgoing_slope * next_x[0]) + const_a },
+        Roots::One(next_x) => Some(Point { x: next_x[0], y: (outgoing_slope * next_x[0]) + const_a }),
         Roots::Two(next_point_x_roots) => {
             let next_point_x_try1 = next_point_x_roots[0];
             let next_point_x_try2 = next_point_x_roots[1];
@@ -98,13 +120,11 @@ fn get_next_point_after_reflection(prev_point: &Point, reflec_point: &Point) -> 
             }
 
             // decide on a final point
-            if is_try1_good {
-                next_point_try1
-            } else if is_try2_good {
-                next_point_try2
-            }
-            else {
-                panic!("Neither point matches the angle.");
+            match (is_try1_good, is_try2_good) {
+                (true, true) => panic!("Both points match the angle."),
+                (true, false) => Some(next_point_try1),
+                (false, true) => Some(next_point_try2),
+                (false, false) => None,
             }
         }
         _ => panic!("Unexpected number of roots found."),
@@ -134,6 +154,10 @@ fn get_slope_of_outgoing_bounce(incoming_slope: f64, normal_slope: f64) -> f64 {
         (2.0*incoming_slope*normal_slope - normal_slope*normal_slope + 1.0)
 }
 
+fn debug_print_angle_rad_in_deg(angle_rad: f64, message: &str) {
+    println!("{} = {} deg", message, angle_rad.rad_to_deg());
+}
+
 fn main() {
     println!("Starting...");
 
@@ -154,15 +178,20 @@ fn main() {
             println!("Found the point: {}", next_point.to_string());
             break;
         }
-        
+
+        // "The section corresponding to -0.01 <= x <= 0.01 at the top is missing, allowing the light to enter and exit through the hole."
+        if (next_point.y > 9.0) && (next_point.x.abs() <= 0.01) {
+            println!("Found the exit point after {} bounces: {}", bounce_num, next_point.to_string());
+            break;
+        }
+
+        if bounce_num > 3000 {
+            // panic!("Too many bounces");
+        }
+
         point_last = point_now;
         point_now = next_point;
         bounce_num += 1;
-
-        if bounce_num > 3 {
-            break;
-            // panic!("Too many bounces");
-        }
     }
 
     println!("End.");
